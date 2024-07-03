@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sign Language Recognition System</title>
+</head>
+<style>
+    .titleElem{
+        text-align: center;
+    }
+
+    #recordingArea {
+        margin: auto;        
+    }
+
+    .container{
+        display: flex;
+    }
+
+    .slrBtn{
+        background-color: black;
+        color: white;
+        transition: 0.5s ease-in-out;
+        padding: 10px;
+        border: 1px solid black;
+        cursor: pointer;
+    }
+
+    .slrBtn:disabled{
+        background-color: #ccc;
+        border: 1px solid #ccc;
+        color: black;
+    }
+
+    .slrBtn:disabled:hover{
+        background-color: #ccc;
+        border: 1px solid #ccc;
+        color: black;
+    }
+
+    .slrBtn:hover{
+        color: black;
+        border: 1px solid black;
+        background-color: white;
+    }
+</style>
+<body>
+    <h1 class="titleElem">Sign Language Recognition System</h1>
+    <div class="container">
+        <div id="recordingArea">
+            <h2>Recording Area</h2>
+            <video id="video" width="640" height="480" autoplay></video>
+            <br>
+            <button class="slrBtn" id="startBtn">Start Recording</button>
+            <button class="slrBtn" id="stopBtn" disabled>Stop Recording</button>
+        </div>
+        <div id="playbackArea">
+            <h2>Playback Area</h2>
+            <video id="recordedVideo" width="640" height="480" controls></video>
+            <br/>
+            <button class="slrBtn" id="analyzeBtn" disabled>Predict Sign</button>
+        </div>
+    </div>
+    <script>
+        let mediaRecorder;
+        let recordedBlobs = [];
+        let videoElement = document.getElementById('video');
+        let recordedVideoElement = document.getElementById('recordedVideo');
+        let frameCount = 0;
+        const maxFrames = 50;
+        let stream;
+        let frameInterval;
+
+        async function startRecording() {
+            if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+                await navigator.mediaDevices.getUserMedia({video:true}).then((mystream) => {
+                    stream = mystream
+                    videoElement.srcObject = stream;
+                    videoElement.play();
+                })
+            }
+            recordedBlobs = [];
+            frameCount = 0
+
+            mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9'});
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data && event.data.size > 0) {
+                    recordedBlobs.push(event.data);
+                }
+            };
+            mediaRecorder.start(300);
+
+            intervalId = setInterval(() => {
+                // Increment frame count by 1 for each 30 ms interval (assuming 30 fps)
+                frameCount += 1;
+                // If 50 or more frames have been recorded, stop the recording
+                if (frameCount >= 50) {
+                    stopRecording();
+                }
+            }, 100);
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+        }
+
+        function stopRecording() {
+            mediaRecorder.stop();
+            clearInterval(intervalId);
+            stream.getTracks().forEach(track => track.stop());
+            stream = null; // Reset stream to prompt for permission again on next start
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('analyzeBtn').disabled = false;
+
+            // Create a video URL from the recorded blobs and set it as the source for the playback video element
+            const superBuffer = new Blob(recordedBlobs, { type: 'video/webm' });
+            recordedVideoElement.src = window.URL.createObjectURL(superBuffer);
+        }
+
+        document.getElementById('startBtn').addEventListener('click', () => {
+            startRecording();
+        });
+
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            stopRecording();
+            document.getElementById('startBtn').disabled = false; // Enable the start button
+        });
+
+        document.getElementById('analyzeBtn').addEventListener('click', () => {
+            const blob = new Blob(recordedBlobs, { type: 'video/webm' });
+            const formData = new FormData();
+            formData.append('video', blob, 'recorded_video.webm');
+
+            fetch('/upload_video', {
+                method: 'POST',
+                body: formData
+            }).then(response => response.json())
+            .then(data => {
+                if(data.sign){
+                    alert('Sign: ' + data.sign);
+                }else{
+                    alert('Error: ' + data.error);
+                }
+            }).catch(error => {
+                console.error('Error:', error);
+            });
+
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('analyzeBtn').disabled = true;
+        });
+    </script>
+</body>
+</html>
